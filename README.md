@@ -3,76 +3,77 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Number Guess Master</title>
+    <title>Number Guess Pro</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        :root { --primary: #6366f1; --secondary: #10b981; --bg: #f8fafc; }
-        body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 20px; }
-        .card { background: white; border-radius: 20px; padding: 30px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
-        h2 { margin-top: 0; color: #1e293b; }
+        :root { --primary: #6366f1; --win: #10b981; --bg: #f1f5f9; --danger: #ef4444; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 20px; }
+        .card { background: white; border-radius: 20px; padding: 25px; box-shadow: 0 10px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
+        .badge { font-family: monospace; background: #e0e7ff; color: #4338ca; padding: 8px; border-radius: 8px; cursor: pointer; display: inline-block; margin: 10px 0; }
         input { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #e2e8f0; border-radius: 10px; box-sizing: border-box; font-size: 16px; }
-        button { width: 100%; padding: 12px; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; transition: transform 0.1s; margin: 5px 0; }
-        button:active { transform: scale(0.98); }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-secondary { background: var(--secondary); color: white; }
-        .btn-outline { background: #f1f5f9; color: #475569; font-size: 0.8em; }
+        button { width: 100%; padding: 12px; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; margin: 5px 0; transition: 0.2s; }
+        button:disabled { background: #cbd5e1 !important; cursor: not-allowed; opacity: 0.7; }
+        .btn-gm { background: var(--primary); color: white; }
+        .btn-reveal { background: #f59e0b; color: white; }
+        #playerList { text-align: left; background: #f8fafc; padding: 10px; border-radius: 10px; margin: 15px 0; font-size: 0.9em; border: 1px solid #e2e8f0; }
+        .winner-banner { background: #dcfce7; color: #166534; padding: 15px; border-radius: 10px; margin: 10px 0; font-weight: bold; border: 2px solid #10b981; }
         .hidden { display: none; }
-        #log { margin-top: 20px; text-align: left; max-height: 150px; overflow-y: auto; border-top: 2px solid #f1f5f9; padding-top: 10px; font-size: 0.9em; }
-        .badge { font-family: monospace; background: #e0e7ff; color: #4338ca; padding: 5px 10px; border-radius: 5px; cursor: pointer; }
     </style>
 </head>
 <body>
 
 <div class="card">
-    <h2 id="title">🔢 Guess 1-49</h2>
+    <h2 id="title">🔢 Guessing Game</h2>
     
     <div id="setup">
-        <button class="btn-primary" onclick="startAsGM()">Host as Game Master</button>
-        <div style="margin: 20px 0; color: #94a3b8;">— OR JOIN —</div>
-        <input type="text" id="playerName" placeholder="Your Name">
-        <input type="text" id="joinId" placeholder="Paste Room ID Here">
-        <button class="btn-secondary" onclick="joinGame()">Join Game</button>
+        <button class="btn-gm" onclick="startAsGM()">Host as Game Master</button>
+        <hr style="margin:20px; border:0; border-top:1px solid #eee;">
+        <input type="text" id="playerName" placeholder="Your Nickname">
+        <input type="text" id="joinId" placeholder="Room ID to Join">
+        <button style="background:var(--win); color:white;" onclick="joinGame()">Join Game</button>
     </div>
 
     <div id="gmScreen" class="hidden">
-        <p>Tap ID to Copy:</p>
-        <span class="badge" id="displayId" onclick="copyId()">Generating...</span>
-        <button class="btn-primary" onclick="generateNumber()" style="margin-top:20px">Generate Random Number</button>
-        <div id="log"></div>
+        <span class="badge" onclick="copyId()">ID: <span id="displayId">...</span> (Tap to Copy)</span>
+        <div id="playerList"><strong>Players (0):</strong><div id="names" style="color: #64748b;">Waiting for connections...</div></div>
+        <button class="btn-gm" onclick="generateNumber()">Start New Round</button>
+        <button class="btn-reveal" id="revealBtn" onclick="revealNumber()" disabled>Reveal Winner</button>
+        <div id="gmLog" style="text-align:left; margin-top:15px; font-size:0.85em; max-height: 100px; overflow-y: auto;"></div>
     </div>
 
     <div id="playerScreen" class="hidden">
-        <p>Playing as: <strong id="statName"></strong></p>
-        <input type="number" id="guessInput" pattern="\d*" placeholder="Your Guess (1-49)">
-        <button class="btn-primary" onclick="sendGuess()">Submit Guess</button>
-        <p id="feedback" style="font-weight: bold; color: var(--primary);"></p>
+        <p>Hello, <strong id="statName"></strong>!</p>
+        <div id="playerFeedback"></div>
+        <input type="number" id="guessInput" pattern="\d*" placeholder="Enter 1-49">
+        <button id="submitBtn" class="btn-gm" onclick="sendGuess()">Lock In Guess</button>
+        <p id="statusMsg" style="color: #64748b; font-size: 0.9em;">Waiting for GM...</p>
     </div>
 </div>
 
 <script>
     let peer, conn, secretNum, myNickname;
+    let guesses = []; 
+    let players = []; 
+    let connections = []; // Track all player connections for broadcasting
 
+    // --- GAME MASTER LOGIC ---
     function startAsGM() {
         peer = new Peer();
-        peer.on('open', (id) => {
+        peer.on('open', id => {
             document.getElementById('displayId').innerText = id;
-            document.getElementById('setup').classList.add('hidden');
-            document.getElementById('gmScreen').classList.remove('hidden');
+            showScreen('gmScreen');
         });
 
-        peer.on('connection', (c) => {
-            c.on('data', (data) => {
-                if (data.type === 'guess') {
-                    const val = parseInt(data.guess);
-                    const isCorrect = val === secretNum;
-                    const hint = val < secretNum ? "Too Low" : "Too High";
-                    
-                    const entry = document.createElement('div');
-                    entry.innerHTML = `<strong>${data.user}:</strong> ${val} ${isCorrect ? '✅' : '❌ ('+hint+')'}`;
-                    document.getElementById('log').prepend(entry);
-                    
-                    if(isCorrect) alert("🎉 " + data.user + " WON!");
-                    else c.send({ type: 'hint', text: hint });
+        peer.on('connection', c => {
+            connections.push(c);
+            c.on('data', data => {
+                if(data.type === 'join') {
+                    if(!players.includes(data.name)) players.push(data.name);
+                    updatePlayerList();
+                }
+                if(data.type === 'guess') {
+                    guesses.push({ name: data.user, val: parseInt(data.guess) });
+                    document.getElementById('gmLog').innerHTML += `<div>✅ ${data.user} locked in.</div>`;
                 }
             });
         });
@@ -80,42 +81,85 @@
 
     function generateNumber() {
         secretNum = Math.floor(Math.random() * 49) + 1;
-        document.getElementById('log').innerHTML = "<em>Number set! Waiting for guesses...</em>";
+        guesses = [];
+        document.getElementById('gmLog').innerHTML = "<b>Round Started!</b> Waiting for guesses...";
+        document.getElementById('revealBtn').disabled = false;
+        
+        // Broadcast to all players to reset
+        connections.forEach(c => c.send({ type: 'reset' }));
     }
 
+    function revealNumber() {
+        const winners = guesses.filter(g => g.val === secretNum).map(g => g.name);
+        let msg = `The number was ${secretNum}. `;
+        msg += winners.length > 0 ? "Winners: " + winners.join(", ") : "No one got it!";
+        
+        document.getElementById('gmLog').innerHTML = `<div class="winner-banner">${msg}</div>` + document.getElementById('gmLog').innerHTML;
+        document.getElementById('revealBtn').disabled = true;
+
+        // Broadcast the result to players
+        connections.forEach(c => {
+            c.send({ type: 'result', secret: secretNum, winners: winners });
+        });
+    }
+
+    function updatePlayerList() {
+        document.getElementById('names').innerHTML = players.join(", ");
+        document.getElementById('playerList').firstChild.innerText = `Players (${players.length}):`;
+    }
+
+    // --- PLAYER LOGIC ---
     function joinGame() {
         myNickname = document.getElementById('playerName').value.trim();
-        const targetId = document.getElementById('joinId').value.trim();
-        if (!myNickname || !targetId) return alert("Fill in both fields!");
+        const tid = document.getElementById('joinId').value.trim();
+        if(!myNickname || !tid) return alert("Nickname and ID required!");
 
         peer = new Peer();
         peer.on('open', () => {
-            conn = peer.connect(targetId);
+            conn = peer.connect(tid);
             conn.on('open', () => {
-                document.getElementById('setup').classList.add('hidden');
-                document.getElementById('playerScreen').classList.remove('hidden');
+                showScreen('playerScreen');
                 document.getElementById('statName').innerText = myNickname;
+                conn.send({ type: 'join', name: myNickname });
             });
-            conn.on('data', (data) => {
-                if(data.type === 'hint') document.getElementById('feedback').innerText = "Hint: " + data.text;
+
+            conn.on('data', data => {
+                if(data.type === 'reset') {
+                    document.getElementById('submitBtn').disabled = false;
+                    document.getElementById('guessInput').value = '';
+                    document.getElementById('statusMsg').innerText = "New round started! Submit your guess.";
+                    document.getElementById('playerFeedback').innerHTML = "";
+                }
+                if(data.type === 'result') {
+                    const isWinner = data.winners.includes(myNickname);
+                    document.getElementById('playerFeedback').innerHTML = isWinner 
+                        ? `<div class="winner-banner">YOU WON! 🎉</div>` 
+                        : `<div style="color:var(--danger)">Number was ${data.secret}. Better luck next time!</div>`;
+                    document.getElementById('statusMsg').innerText = "Round over.";
+                }
             });
         });
     }
 
     function sendGuess() {
         const g = document.getElementById('guessInput').value;
-        if (!g) return;
+        if(!g || g < 1 || g > 49) return alert("Enter 1-49");
+        
         conn.send({ type: 'guess', user: myNickname, guess: g });
-        document.getElementById('feedback').innerText = "Sent " + g + "...";
-        document.getElementById('guessInput').value = '';
+        document.getElementById('submitBtn').disabled = true;
+        document.getElementById('statusMsg').innerText = "Guess submitted! Waiting for reveal...";
+    }
+
+    // --- HELPERS ---
+    function showScreen(id) {
+        document.getElementById('setup').classList.add('hidden');
+        document.getElementById(id).classList.remove('hidden');
     }
 
     function copyId() {
-        const id = document.getElementById('displayId').innerText;
-        navigator.clipboard.writeText(id);
-        alert("Room ID copied to clipboard!");
+        const idText = document.getElementById('displayId').innerText;
+        navigator.clipboard.writeText(idText).then(() => alert("ID Copied!"));
     }
 </script>
-
 </body>
 </html>

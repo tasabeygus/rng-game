@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Number Guess Pro</title>
+    <title>Number Guess Elite</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         :root { --primary: #6366f1; --win: #10b981; --bg: #f1f5f9; --danger: #ef4444; }
         body { font-family: -apple-system, sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 20px; }
         .card { background: white; border-radius: 20px; padding: 25px; box-shadow: 0 10px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
         .badge { font-family: monospace; background: #e0e7ff; color: #4338ca; padding: 8px; border-radius: 8px; cursor: pointer; display: inline-block; margin: 10px 0; }
-        input { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #e2e8f0; border-radius: 10px; box-sizing: border-box; font-size: 16px; }
+        input, select { width: 100%; padding: 12px; margin: 10px 0; border: 2px solid #e2e8f0; border-radius: 10px; box-sizing: border-box; font-size: 16px; background: white; }
         button { width: 100%; padding: 12px; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; margin: 5px 0; transition: 0.2s; }
         button:disabled { background: #cbd5e1 !important; cursor: not-allowed; opacity: 0.7; }
         .btn-gm { background: var(--primary); color: white; }
@@ -18,6 +18,7 @@
         #playerList { text-align: left; background: #f8fafc; padding: 10px; border-radius: 10px; margin: 15px 0; font-size: 0.9em; border: 1px solid #e2e8f0; }
         .winner-banner { background: #dcfce7; color: #166534; padding: 15px; border-radius: 10px; margin: 10px 0; font-weight: bold; border: 2px solid #10b981; }
         .hidden { display: none; }
+        .input-group { display: flex; gap: 10px; align-items: center; }
     </style>
 </head>
 <body>
@@ -35,16 +36,26 @@
 
     <div id="gmScreen" class="hidden">
         <span class="badge" onclick="copyId()">ID: <span id="displayId">...</span> (Tap to Copy)</span>
-        <div id="playerList"><strong>Players (0):</strong><div id="names" style="color: #64748b;">Waiting for connections...</div></div>
+        <div id="playerList"><strong>Players (0):</strong><div id="names" style="color: #64748b;">Waiting...</div></div>
         <button class="btn-gm" onclick="generateNumber()">Start New Round</button>
         <button class="btn-reveal" id="revealBtn" onclick="revealNumber()" disabled>Reveal Winner</button>
-        <div id="gmLog" style="text-align:left; margin-top:15px; font-size:0.85em; max-height: 100px; overflow-y: auto;"></div>
+        <div id="gmLog" style="text-align:left; margin-top:15px; font-size:0.85em; max-height: 120px; overflow-y: auto;"></div>
     </div>
 
     <div id="playerScreen" class="hidden">
         <p>Hello, <strong id="statName"></strong>!</p>
         <div id="playerFeedback"></div>
-        <input type="number" id="guessInput" pattern="\d*" placeholder="Enter 1-49">
+        
+        <label style="font-size: 0.8em; color: #64748b;">Pick from list:</label>
+        <select id="guessDropdown" onchange="syncInput(this.value)">
+            <option value="">-- Select --</option>
+            </select>
+        
+        <p style="margin: 5px 0; font-size: 0.8em; color: #94a3b8;">- OR -</p>
+        
+        <label style="font-size: 0.8em; color: #64748b;">Type manually:</label>
+        <input type="number" id="guessInput" min="1" max="49" placeholder="1-49" oninput="syncDropdown(this.value)">
+        
         <button id="submitBtn" class="btn-gm" onclick="sendGuess()">Lock In Guess</button>
         <p id="statusMsg" style="color: #64748b; font-size: 0.9em;">Waiting for GM...</p>
     </div>
@@ -54,16 +65,27 @@
     let peer, conn, secretNum, myNickname;
     let guesses = []; 
     let players = []; 
-    let connections = []; // Track all player connections for broadcasting
+    let connections = [];
 
-    // --- GAME MASTER LOGIC ---
+    // Populate Dropdown 1-49
+    const dropdown = document.getElementById('guessDropdown');
+    for(let i=1; i<=49; i++) {
+        let opt = document.createElement('option');
+        opt.value = i;
+        opt.innerHTML = i;
+        dropdown.appendChild(opt);
+    }
+
+    function syncInput(val) { document.getElementById('guessInput').value = val; }
+    function syncDropdown(val) { document.getElementById('guessDropdown').value = val; }
+
+    // --- GM LOGIC ---
     function startAsGM() {
         peer = new Peer();
         peer.on('open', id => {
             document.getElementById('displayId').innerText = id;
             showScreen('gmScreen');
         });
-
         peer.on('connection', c => {
             connections.push(c);
             c.on('data', data => {
@@ -84,23 +106,16 @@
         guesses = [];
         document.getElementById('gmLog').innerHTML = "<b>Round Started!</b> Waiting for guesses...";
         document.getElementById('revealBtn').disabled = false;
-        
-        // Broadcast to all players to reset
         connections.forEach(c => c.send({ type: 'reset' }));
     }
 
     function revealNumber() {
         const winners = guesses.filter(g => g.val === secretNum).map(g => g.name);
         let msg = `The number was ${secretNum}. `;
-        msg += winners.length > 0 ? "Winners: " + winners.join(", ") : "No one got it!";
-        
+        msg += winners.length > 0 ? "Winners: " + winners.join(", ") : "No winners this round!";
         document.getElementById('gmLog').innerHTML = `<div class="winner-banner">${msg}</div>` + document.getElementById('gmLog').innerHTML;
         document.getElementById('revealBtn').disabled = true;
-
-        // Broadcast the result to players
-        connections.forEach(c => {
-            c.send({ type: 'result', secret: secretNum, winners: winners });
-        });
+        connections.forEach(c => c.send({ type: 'result', secret: secretNum, winners: winners }));
     }
 
     function updatePlayerList() {
@@ -113,7 +128,6 @@
         myNickname = document.getElementById('playerName').value.trim();
         const tid = document.getElementById('joinId').value.trim();
         if(!myNickname || !tid) return alert("Nickname and ID required!");
-
         peer = new Peer();
         peer.on('open', () => {
             conn = peer.connect(tid);
@@ -122,19 +136,19 @@
                 document.getElementById('statName').innerText = myNickname;
                 conn.send({ type: 'join', name: myNickname });
             });
-
             conn.on('data', data => {
                 if(data.type === 'reset') {
                     document.getElementById('submitBtn').disabled = false;
                     document.getElementById('guessInput').value = '';
-                    document.getElementById('statusMsg').innerText = "New round started! Submit your guess.";
+                    document.getElementById('guessDropdown').value = '';
+                    document.getElementById('statusMsg').innerText = "New round! Pick a number.";
                     document.getElementById('playerFeedback').innerHTML = "";
                 }
                 if(data.type === 'result') {
                     const isWinner = data.winners.includes(myNickname);
                     document.getElementById('playerFeedback').innerHTML = isWinner 
                         ? `<div class="winner-banner">YOU WON! 🎉</div>` 
-                        : `<div style="color:var(--danger)">Number was ${data.secret}. Better luck next time!</div>`;
+                        : `<div style="color:var(--danger); margin-bottom:10px;">The number was <b>${data.secret}</b>.</div>`;
                     document.getElementById('statusMsg').innerText = "Round over.";
                 }
             });
@@ -142,23 +156,21 @@
     }
 
     function sendGuess() {
-        const g = document.getElementById('guessInput').value;
-        if(!g || g < 1 || g > 49) return alert("Enter 1-49");
+        const g = parseInt(document.getElementById('guessInput').value);
+        if(isNaN(g) || g < 1 || g > 49) return alert("Please select or type a number from 1 to 49!");
         
         conn.send({ type: 'guess', user: myNickname, guess: g });
         document.getElementById('submitBtn').disabled = true;
-        document.getElementById('statusMsg').innerText = "Guess submitted! Waiting for reveal...";
+        document.getElementById('statusMsg').innerText = "Locked in (" + g + "). Waiting for GM...";
     }
 
-    // --- HELPERS ---
     function showScreen(id) {
         document.getElementById('setup').classList.add('hidden');
         document.getElementById(id).classList.remove('hidden');
     }
 
     function copyId() {
-        const idText = document.getElementById('displayId').innerText;
-        navigator.clipboard.writeText(idText).then(() => alert("ID Copied!"));
+        navigator.clipboard.writeText(document.getElementById('displayId').innerText).then(() => alert("ID Copied!"));
     }
 </script>
 </body>

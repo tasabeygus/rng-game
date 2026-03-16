@@ -18,7 +18,6 @@
         #playerList { text-align: left; background: #f8fafc; padding: 10px; border-radius: 10px; margin: 15px 0; font-size: 0.9em; border: 1px solid #e2e8f0; }
         .winner-banner { background: #dcfce7; color: #166534; padding: 15px; border-radius: 10px; margin: 10px 0; font-weight: bold; border: 2px solid #10b981; }
         .hidden { display: none; }
-        .input-group { display: flex; gap: 10px; align-items: center; }
     </style>
 </head>
 <body>
@@ -38,7 +37,7 @@
         <span class="badge" onclick="copyId()">ID: <span id="displayId">...</span> (Tap to Copy)</span>
         <div id="playerList"><strong>Players (0):</strong><div id="names" style="color: #64748b;">Waiting...</div></div>
         <button class="btn-gm" onclick="generateNumber()">Start New Round</button>
-        <button class="btn-reveal" id="revealBtn" onclick="revealNumber()" disabled>Reveal Winner</button>
+        <button class="btn-reveal" id="revealBtn" onclick="revealNumber()" disabled>Reveal Winner / Number</button>
         <div id="gmLog" style="text-align:left; margin-top:15px; font-size:0.85em; max-height: 120px; overflow-y: auto;"></div>
     </div>
 
@@ -49,7 +48,7 @@
         <label style="font-size: 0.8em; color: #64748b;">Pick from list:</label>
         <select id="guessDropdown" onchange="syncInput(this.value)">
             <option value="">-- Select --</option>
-            </select>
+        </select>
         
         <p style="margin: 5px 0; font-size: 0.8em; color: #94a3b8;">- OR -</p>
         
@@ -71,15 +70,13 @@
     const dropdown = document.getElementById('guessDropdown');
     for(let i=1; i<=49; i++) {
         let opt = document.createElement('option');
-        opt.value = i;
-        opt.innerHTML = i;
+        opt.value = i; opt.innerHTML = i;
         dropdown.appendChild(opt);
     }
 
     function syncInput(val) { document.getElementById('guessInput').value = val; }
     function syncDropdown(val) { document.getElementById('guessDropdown').value = val; }
 
-    // --- GM LOGIC ---
     function startAsGM() {
         peer = new Peer();
         peer.on('open', id => {
@@ -110,12 +107,24 @@
     }
 
     function revealNumber() {
+        // Find winners
         const winners = guesses.filter(g => g.val === secretNum).map(g => g.name);
+        
         let msg = `The number was ${secretNum}. `;
-        msg += winners.length > 0 ? "Winners: " + winners.join(", ") : "No winners this round!";
+        if (winners.length > 0) {
+            msg += "Winners: " + winners.join(", ");
+        } else {
+            msg += "No one got it right!";
+        }
+
+        // Show on GM Screen
         document.getElementById('gmLog').innerHTML = `<div class="winner-banner">${msg}</div>` + document.getElementById('gmLog').innerHTML;
         document.getElementById('revealBtn').disabled = true;
-        connections.forEach(c => c.send({ type: 'result', secret: secretNum, winners: winners }));
+
+        // Send to all players
+        connections.forEach(c => {
+            c.send({ type: 'result', secret: secretNum, winners: winners });
+        });
     }
 
     function updatePlayerList() {
@@ -123,7 +132,6 @@
         document.getElementById('playerList').firstChild.innerText = `Players (${players.length}):`;
     }
 
-    // --- PLAYER LOGIC ---
     function joinGame() {
         myNickname = document.getElementById('playerName').value.trim();
         const tid = document.getElementById('joinId').value.trim();
@@ -157,8 +165,7 @@
 
     function sendGuess() {
         const g = parseInt(document.getElementById('guessInput').value);
-        if(isNaN(g) || g < 1 || g > 49) return alert("Please select or type a number from 1 to 49!");
-        
+        if(isNaN(g) || g < 1 || g > 49) return alert("Select or type 1-49!");
         conn.send({ type: 'guess', user: myNickname, guess: g });
         document.getElementById('submitBtn').disabled = true;
         document.getElementById('statusMsg').innerText = "Locked in (" + g + "). Waiting for GM...";
@@ -170,7 +177,8 @@
     }
 
     function copyId() {
-        navigator.clipboard.writeText(document.getElementById('displayId').innerText).then(() => alert("ID Copied!"));
+        const idStr = document.getElementById('displayId').innerText;
+        navigator.clipboard.writeText(idStr).then(() => alert("ID Copied!"));
     }
 </script>
 </body>
